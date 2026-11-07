@@ -55,11 +55,47 @@ object Ig {
     private fun cookie(name: String): String? =
         cookies().split(";").map { it.trim() }.firstOrNull { it.startsWith("$name=") }?.substringAfter("=")
 
-    fun isLoggedIn() = cookie("sessionid")?.isNotEmpty() == true
-    fun myId(): String? = cookie("ds_user_id")
+    private var app: android.content.Context? = null
+    private val KEEP_NAMES = listOf("sessionid", "ds_user_id", "csrftoken", "mid", "ig_did", "rur", "datr")
 
+    fun init(ctx: android.content.Context) { app = ctx.applicationContext; restoreSession() }
+
+    private fun prefs() = app?.getSharedPreferences("ghost_session", android.content.Context.MODE_PRIVATE)
+
+    /** Saves the login cookies so the session survives anything that clears them. */
+    fun saveSession() {
+        val sid = cookie("sessionid")
+        if (sid.isNullOrEmpty()) return
+        val e = prefs()?.edit() ?: return
+        KEEP_NAMES.forEach { n -> cookie(n)?.takeIf { it.isNotEmpty() }?.let { e.putString(n, it) } }
+        e.apply()
+    }
+
+    /** If the login cookie went missing, put the saved one back. */
+    fun restoreSession() {
+        if (!cookie("sessionid").isNullOrEmpty()) { saveSession(); return }
+        val p = prefs() ?: return
+        if (p.getString("sessionid", null).isNullOrEmpty()) return
+        val cm = CookieManager.getInstance()
+        KEEP_NAMES.forEach { n ->
+            p.getString(n, null)?.let { v ->
+                cm.setCookie(WWW, "$n=$v; Domain=.instagram.com; Path=/; Max-Age=31536000; Secure")
+            }
+        }
+        cm.flush()
+    }
+
+    fun isLoggedIn(): Boolean {
+        if (cookie("sessionid").isNullOrEmpty()) restoreSession()
+        return cookie("sessionid")?.isNotEmpty() == true
+    }
+
+    fun myId(): String? = cookie("ds_user_id") ?: prefs()?.getString("ds_user_id", null)
+
+    /** Only called from Settings → Log out. */
     fun logout() {
         trayItems.clear()
+        prefs()?.edit()?.clear()?.apply()
         CookieManager.getInstance().removeAllCookies(null)
         CookieManager.getInstance().flush()
     }
@@ -121,6 +157,7 @@ object Ig {
         urls: List<String>,
         hasData: (JSONObject) -> Boolean = { true }
     ): JSONObject = withContext(Dispatchers.IO) {
+        restoreSession()
         var emptyButValid: JSONObject? = null
         val problems = mutableListOf<String>()
         for (url in urls) {
@@ -287,7 +324,6 @@ object Ig {
             urls += "${PAGE}/graphql/query/?query_hash=de8017ee0a7c9c45ec4260733d81ea31&variables=$gqlVars"
             urls += "$MOB/api/v1/feed/reels_media/?reel_ids=$id"
             urls += "$MOB/api/v1/feed/user/$id/story/"
-            urls += "${PAGE}/api/v1/feed/user/$id/story/"
         }
         val key = ids.first()
         val j = try {
