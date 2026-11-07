@@ -31,6 +31,11 @@ class LoginActivity : AppCompatActivity() {
         @Volatile var open = false
         private const val LOGIN_URL = "https://www.instagram.com/accounts/login/"
         private const val HOME_URL = "https://www.instagram.com/"
+        // Desktop Chrome identity, so Instagram serves its desktop login flow, whose
+        // device-approval step completes more reliably inside an in-app browser.
+        private const val DESKTOP_UA =
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) " +
+            "Chrome/126.0.0.0 Safari/537.36"
 
         /** "wait" = passive approval screen (safe to reload once). "hold" = leave it alone. */
         private const val CLASSIFY = """
@@ -108,7 +113,12 @@ class LoginActivity : AppCompatActivity() {
             javaScriptEnabled = true
             domStorageEnabled = true
             databaseEnabled = true
-            userAgentString = Ig.UA
+            userAgentString = DESKTOP_UA        // desktop login flow
+            useWideViewPort = true              // make the desktop page fit the phone
+            loadWithOverviewMode = true
+            setSupportZoom(true)
+            builtInZoomControls = true
+            displayZoomControls = false
         }
         CookieManager.getInstance().setAcceptCookie(true)
         CookieManager.getInstance().setAcceptThirdPartyCookies(web, true)
