@@ -70,6 +70,9 @@ class StoryViewerActivity : AppCompatActivity() {
     private var imageReady = false
     private var loadJob: Job? = null
     private var downAt = 0L
+    private var downX = 0f
+    private var downY = 0f
+    private var dragging = false
 
     private val handler = Handler(Looper.getMainLooper())
     private val tick = object : Runnable {
@@ -113,16 +116,42 @@ class StoryViewerActivity : AppCompatActivity() {
             }
         })
 
+        val root = findViewById<View>(R.id.root)
         findViewById<View>(R.id.touch).setOnTouchListener { v, ev ->
             when (ev.action) {
-                MotionEvent.ACTION_DOWN -> { downAt = System.currentTimeMillis(); setPaused(true) }
+                MotionEvent.ACTION_DOWN -> {
+                    downAt = System.currentTimeMillis()
+                    downX = ev.rawX; downY = ev.rawY
+                    dragging = false
+                    setPaused(true)
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    val dy = ev.rawY - downY
+                    val dx = ev.rawX - downX
+                    // Start a drag once the finger moves down clearly more than sideways.
+                    if (!dragging && dy > v.dp(14) && dy > kotlin.math.abs(dx)) dragging = true
+                    if (dragging) root.translationY = dy.coerceAtLeast(0f)
+                }
                 MotionEvent.ACTION_UP -> {
+                    val dy = ev.rawY - downY
+                    if (dragging && dy > v.dp(120)) {
+                        // Swiped down far enough: slide away and go back to the stories page.
+                        root.animate().translationY(root.height.toFloat())
+                            .setDuration(150).withEndAction { finish() }.start()
+                        return@setOnTouchListener true
+                    }
+                    if (dragging) root.animate().translationY(0f).setDuration(150).start()
                     setPaused(false)
-                    if (System.currentTimeMillis() - downAt < 250) {
+                    if (!dragging && System.currentTimeMillis() - downAt < 250) {
                         if (ev.x < v.width / 3f) prev() else next()
                     }
+                    dragging = false
                 }
-                MotionEvent.ACTION_CANCEL -> setPaused(false)
+                MotionEvent.ACTION_CANCEL -> {
+                    if (dragging) root.animate().translationY(0f).setDuration(150).start()
+                    dragging = false
+                    setPaused(false)
+                }
             }
             true
         }
