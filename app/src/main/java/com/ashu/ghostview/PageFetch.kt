@@ -60,6 +60,7 @@ object PageFetch {
 
     /** GET [path] (e.g. "/api/v1/feed/reels_tray/") from the page. Returns (status, body). */
     suspend fun get(path: String): Pair<Int, String> = withContext(Dispatchers.Main) {
+        if (web == null) Ig.appContext()?.let { init(it) }   // app restarted on another screen
         val w = web ?: return@withContext (-1 to "page not started")
         try {
             withTimeout(12000) { ready.await() }

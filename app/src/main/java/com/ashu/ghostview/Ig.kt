@@ -60,6 +60,8 @@ object Ig {
 
     fun init(ctx: android.content.Context) { app = ctx.applicationContext; restoreSession() }
 
+    fun appContext(): android.content.Context? = app
+
     private fun prefs() = app?.getSharedPreferences("ghost_session", android.content.Context.MODE_PRIVATE)
 
     /** Saves the login cookies so the session survives anything that clears them. */
@@ -400,7 +402,8 @@ object Ig {
             trayItems.remove(target.user.id)   // force a real network fetch for the test
             try {
                 val s = stories(target.user.id)
-                line(s.isNotEmpty(), "Open a story", "@${target.user.username}: ${s.size} stories (${s.count { it.isVideo }} videos)")
+                sb.append(if (s.isNotEmpty()) "✅ " else "ℹ️ ").append("Story (quick method): ")
+                    .append(if (s.isNotEmpty()) "${s.size} stories" else "not available, the viewer uses Instagram's story page instead (normal)").append("\n\n")
             } catch (e: Exception) { line(false, "Open a story", e.message ?: "") }
             try { val p = hdPic(target.user); line(p.isNotEmpty(), "HD profile photo", if (p.isNotEmpty()) "ok" else "missing") } catch (e: Exception) { line(false, "HD profile photo", e.message ?: "") }
         }

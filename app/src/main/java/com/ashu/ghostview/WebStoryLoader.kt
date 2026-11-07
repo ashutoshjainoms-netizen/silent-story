@@ -80,6 +80,7 @@ class WebStoryLoader(activity: Activity, container: ViewGroup) {
 
     /** Returns the current stories of [username], or an empty list. */
     suspend fun load(username: String): List<StoryItem> {
+        Ig.restoreSession()   // make sure the login is in place before Instagram's page loads
         lastError = ""
         collected = emptyList()
         target = username
