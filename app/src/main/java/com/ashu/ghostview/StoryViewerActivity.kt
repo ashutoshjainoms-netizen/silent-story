@@ -73,6 +73,10 @@ class StoryViewerActivity : AppCompatActivity() {
     private var downX = 0f
     private var downY = 0f
     private var dragging = false
+    private var dragAxis = 0   // 0 = undecided, 1 = vertical (close), 2 = horizontal (change person)
+    private lateinit var rootView: View
+    private val cache = HashMap<String, List<StoryItem>>()   // already-loaded people, for instant revisit
+    private lateinit var prefetchLoader: WebStoryLoader      // loads the next person in the background
 
     private val handler = Handler(Looper.getMainLooper())
     private val tick = object : Runnable {
@@ -97,6 +101,8 @@ class StoryViewerActivity : AppCompatActivity() {
         btnMore = findViewById(R.id.btnMore)
         message = findViewById(R.id.message)
         webLoader = WebStoryLoader(this, findViewById(R.id.root))
+        prefetchLoader = WebStoryLoader(this, findViewById(R.id.root))
+        rootView = findViewById(R.id.root)
         muted = getSharedPreferences("ghost", MODE_PRIVATE).getBoolean("muted", false)
 
         val ids = intent.getStringArrayListExtra("ids") ?: arrayListOf()
@@ -116,40 +122,51 @@ class StoryViewerActivity : AppCompatActivity() {
             }
         })
 
-        val root = findViewById<View>(R.id.root)
         findViewById<View>(R.id.touch).setOnTouchListener { v, ev ->
             when (ev.action) {
                 MotionEvent.ACTION_DOWN -> {
                     downAt = System.currentTimeMillis()
                     downX = ev.rawX; downY = ev.rawY
-                    dragging = false
+                    dragging = false; dragAxis = 0
                     setPaused(true)
                 }
                 MotionEvent.ACTION_MOVE -> {
-                    val dy = ev.rawY - downY
                     val dx = ev.rawX - downX
-                    // Start a drag once the finger moves down clearly more than sideways.
-                    if (!dragging && dy > v.dp(14) && dy > kotlin.math.abs(dx)) dragging = true
-                    if (dragging) root.translationY = dy.coerceAtLeast(0f)
+                    val dy = ev.rawY - downY
+                    // Lock to one axis once past the slop: down = close, sideways = change person.
+                    if (dragAxis == 0 && (kotlin.math.abs(dx) > v.dp(14) || dy > v.dp(14))) {
+                        dragAxis = if (dy > kotlin.math.abs(dx)) 1 else 2
+                        dragging = true
+                    }
+                    when (dragAxis) {
+                        1 -> rootView.translationY = dy.coerceAtLeast(0f)
+                        2 -> rootView.translationX = dx
+                    }
                 }
                 MotionEvent.ACTION_UP -> {
+                    val dx = ev.rawX - downX
                     val dy = ev.rawY - downY
-                    if (dragging && dy > v.dp(120)) {
-                        // Swiped down far enough: slide away and go back to the stories page.
-                        root.animate().translationY(root.height.toFloat())
-                            .setDuration(150).withEndAction { finish() }.start()
-                        return@setOnTouchListener true
+                    when {
+                        dragAxis == 1 && dy > v.dp(120) -> {
+                            // Swipe down far enough: slide away, back to the stories page.
+                            rootView.animate().translationY(rootView.height.toFloat())
+                                .setDuration(150).withEndAction { finish() }.start()
+                            return@setOnTouchListener true
+                        }
+                        dragAxis == 2 && kotlin.math.abs(dx) > v.dp(70) -> {
+                            // Swipe sideways: go to the next / previous person.
+                            if (dx < 0) goUser(1) else goUser(-1)
+                        }
+                        dragAxis != 0 -> snapBack()
+                        System.currentTimeMillis() - downAt < 250 ->
+                            if (ev.x < v.width / 3f) prev() else next()   // tap = prev/next story of same person
                     }
-                    if (dragging) root.animate().translationY(0f).setDuration(150).start()
                     setPaused(false)
-                    if (!dragging && System.currentTimeMillis() - downAt < 250) {
-                        if (ev.x < v.width / 3f) prev() else next()
-                    }
-                    dragging = false
+                    dragging = false; dragAxis = 0
                 }
                 MotionEvent.ACTION_CANCEL -> {
-                    if (dragging) root.animate().translationY(0f).setDuration(150).start()
-                    dragging = false
+                    snapBack()
+                    dragging = false; dragAxis = 0
                     setPaused(false)
                 }
             }
@@ -189,6 +206,7 @@ class StoryViewerActivity : AppCompatActivity() {
         handler.removeCallbacksAndMessages(null)
         if (::player.isInitialized) player.release()
         if (::webLoader.isInitialized) webLoader.destroy()
+        if (::prefetchLoader.isInitialized) prefetchLoader.destroy()
     }
 
     private fun current(): StoryItem? = items.getOrNull(itemIdx)
@@ -225,8 +243,24 @@ class StoryViewerActivity : AppCompatActivity() {
         menu.show()
     }
 
+    /** Swipe sideways to the next (+1) / previous (-1) person; snap back at the ends. */
+    private fun goUser(delta: Int) {
+        val target = userIdx + delta
+        if (target < 0 || target > users.size - 1) { snapBack(); return }
+        userIdx = target
+        rootView.translationX = 0f
+        rootView.translationY = 0f
+        loadUser()
+    }
+
+    private fun snapBack() {
+        rootView.animate().translationX(0f).translationY(0f).setDuration(150).start()
+    }
+
     private fun loadUser() {
         val u = users.getOrNull(userIdx) ?: return finish()
+        rootView.translationX = 0f
+        rootView.translationY = 0f
         username.text = u.username
         avatar.loadCircle(u.pic)
         items = emptyList()
@@ -234,8 +268,16 @@ class StoryViewerActivity : AppCompatActivity() {
         bars.removeAllViews()
         player.stop()
         image.setImageDrawable(null)
-        loading.isVisible = true
 
+        // Already loaded this person (prefetched or seen before): show instantly.
+        cache[u.id]?.takeIf { it.isNotEmpty() }?.let {
+            loading.isVisible = false
+            applyStories(u, it)
+            prefetchUser(userIdx + 1)
+            return
+        }
+
+        loading.isVisible = true
         loadJob?.cancel()
         loadJob = lifecycleScope.launch {
             try {
@@ -245,19 +287,47 @@ class StoryViewerActivity : AppCompatActivity() {
                     showMessage("Couldn't load stories for @${u.username}.\n\n${webLoader.lastError}\n${Ig.lastNote()}")
                     return@launch
                 }
-                // Start at the first story you haven't watched yet (like Instagram does).
-                val seen = store.seenUpTo(u.id)
-                itemIdx = list.indexOfFirst { it.takenAt > seen }.let { if (it < 0) 0 else it }
-                items = list
-                store.markSeen(u.id, list.maxOf { it.takenAt })
-                buildBars()
-                showItem()
+                cache[u.id] = list
+                applyStories(u, list)
+                prefetchUser(userIdx + 1)   // warm the next person so a sideways swipe is instant
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
                 showMessage(e.message ?: "Couldn't load this story.")
             }
         }
+    }
+
+    private fun applyStories(u: IgUser, list: List<StoryItem>) {
+        // Start at the first story you haven't watched yet (like Instagram does).
+        val seen = store.seenUpTo(u.id)
+        itemIdx = list.indexOfFirst { it.takenAt > seen }.let { if (it < 0) 0 else it }
+        items = list
+        store.markSeen(u.id, list.maxOf { it.takenAt })
+        buildBars()
+        showItem()
+    }
+
+    /** Background-load a person into the cache (and warm their first image) without showing them. */
+    private fun prefetchUser(idx: Int) {
+        val u = users.getOrNull(idx) ?: return
+        if (cache.containsKey(u.id)) return
+        lifecycleScope.launch {
+            val list = try {
+                Ig.stories(u.id).ifEmpty { prefetchLoader.load(u.username) }
+            } catch (e: CancellationException) { throw e } catch (e: Exception) { emptyList() }
+            if (list.isNotEmpty()) {
+                cache[u.id] = list
+                list.firstOrNull { !it.isVideo }?.let { warm(it.url) }
+            }
+        }
+    }
+
+    /** Pull an image into Coil's cache ahead of time so showing it later is instant. */
+    private fun warm(url: String) {
+        coil.Coil.imageLoader(this).enqueue(
+            coil.request.ImageRequest.Builder(this).data(url).build()
+        )
     }
 
     private fun buildBars() {
@@ -282,6 +352,8 @@ class StoryViewerActivity : AppCompatActivity() {
         elapsed = 0
         for (i in items.indices) bar(i)?.progress = if (i < itemIdx) 1000 else 0
         ago.text = timeAgo(it.takenAt)
+        // Warm the next story's image so tapping forward is instant.
+        items.getOrNull(itemIdx + 1)?.let { nx -> if (!nx.isVideo) warm(nx.url) }
         loading.isVisible = true
 
         if (it.isVideo) {
