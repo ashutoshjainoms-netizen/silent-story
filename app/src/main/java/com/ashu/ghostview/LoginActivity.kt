@@ -32,17 +32,28 @@ class LoginActivity : AppCompatActivity() {
         private const val RELOAD_EVERY = 5000L   // refresh a waiting screen this often
 
         /** Classifies the current page so we only refresh the safe ones. */
+        /**
+         * Classifies the current page. Only a passive "approve on another device" screen
+         * returns "wait" (safe to refresh). ANYTHING you must touch -- a captcha, the
+         * password form, a code box -- returns "hold" and is never refreshed.
+         */
         private const val CLASSIFY = """
 (function(){
   function vis(e){var r=e.getBoundingClientRect();return r.width>0&&r.height>0;}
-  var p=document.querySelector('input[type=password]');
-  if(p&&vis(p))return 'login';
-  var c=document.querySelector('input[autocomplete=one-time-code],input[name=verificationCode],input[name=security_code],input[name=code],input[inputmode=numeric]');
-  if(c&&vis(c))return 'code';
+  // "I'm not a robot" / reCAPTCHA -- you must tick it; a refresh would reset it
+  if(document.querySelector('iframe[src*="recaptcha"],iframe[title*="recaptcha"],.g-recaptcha,[data-sitekey]'))return 'hold';
   var t=(document.body?document.body.innerText:'').toLowerCase();
-  if(t.indexOf('check your notifications')>=0||t.indexOf('approve the login')>=0||t.indexOf('waiting for approval')>=0||t.indexOf('sent a notification')>=0||t.indexOf('approve from the other device')>=0)return 'wait';
-  if(/challenge|two_factor|auth_platform|approval/.test(location.href))return 'wait';
-  return 'other';
+  if(t.indexOf('not a robot')>=0||t.indexOf('recaptcha')>=0||t.indexOf('security check')>=0)return 'hold';
+  // password form
+  var pw=document.querySelector('input[type=password]');
+  if(pw&&vis(pw))return 'hold';
+  // any box you must type into (codes, email, etc.)
+  var ins=document.querySelectorAll('input');
+  for(var i=0;i<ins.length;i++){var el=ins[i];var ty=(el.type||'').toLowerCase();
+    if((ty==='text'||ty==='tel'||ty==='number'||ty==='email'||ty===''||el.getAttribute('inputmode')==='numeric')&&vis(el)&&!el.disabled&&!el.readOnly)return 'hold';}
+  // ONLY the passive "waiting for your approval on another device" screen
+  if(t.indexOf('check your notifications')>=0||t.indexOf('approve from the other device')>=0||t.indexOf('waiting for approval')>=0||t.indexOf('sent a notification')>=0||t.indexOf('approve the login')>=0)return 'wait';
+  return 'hold';
 })()
 """
     }
