@@ -85,6 +85,12 @@ object Ig {
         cm.flush()
     }
 
+    /** Raw check without restoring anything (used while logging in). */
+    fun hasSessionCookie() = cookie("sessionid")?.isNotEmpty() == true
+
+    /** Forget the saved session (it expired) so it can't interfere with a fresh login. */
+    fun forgetSaved() { prefs()?.edit()?.clear()?.apply() }
+
     fun isLoggedIn(): Boolean {
         if (cookie("sessionid").isNullOrEmpty()) restoreSession()
         return cookie("sessionid")?.isNotEmpty() == true

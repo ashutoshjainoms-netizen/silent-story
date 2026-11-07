@@ -18,7 +18,7 @@ class LoginActivity : AppCompatActivity() {
     private val check = object : Runnable {
         override fun run() {
             CookieManager.getInstance().flush()
-            if (Ig.isLoggedIn()) { Ig.saveSession(); PageFetch.reset(); finish() } else handler.postDelayed(this, 1000)
+            if (Ig.hasSessionCookie()) { Ig.saveSession(); PageFetch.reset(); finish() } else handler.postDelayed(this, 1000)
         }
     }
 
@@ -26,7 +26,16 @@ class LoginActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_login)
+        Ig.forgetSaved()   // an old expired session must not mix into this login
         web = findViewById(R.id.web)
+        findViewById<android.view.View>(R.id.btnContinue).setOnClickListener {
+            CookieManager.getInstance().flush()
+            if (Ig.hasSessionCookie()) { Ig.saveSession(); PageFetch.reset(); finish() }
+            else web.loadUrl("https://www.instagram.com/")
+        }
+        findViewById<android.view.View>(R.id.btnRestart).setOnClickListener {
+            web.loadUrl("https://www.instagram.com/accounts/login/")
+        }
         with(web.settings) {
             javaScriptEnabled = true
             domStorageEnabled = true
