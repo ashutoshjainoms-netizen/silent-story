@@ -11,11 +11,25 @@ android {
         applicationId = "com.ashu.blindview"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 2
+        versionName = "1.1"
+    }
+
+    signingConfigs {
+        // Fixed key so every build shares one signature and updates in place
+        // (no uninstall, login preserved). Fine for a personal debug app.
+        getByName("debug") {
+            storeFile = file("blindview.keystore")
+            storePassword = "blindview123"
+            keyAlias = "blindview"
+            keyPassword = "blindview123"
+        }
     }
 
     buildTypes {
+        debug {
+            signingConfig = signingConfigs.getByName("debug")
+        }
         release {
             isMinifyEnabled = false
         }
