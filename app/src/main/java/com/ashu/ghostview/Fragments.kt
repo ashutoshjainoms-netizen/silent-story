@@ -190,9 +190,23 @@ class SettingsFragment : Fragment(R.layout.fragment_settings) {
         view.findViewById<View>(R.id.rowBrowse).setOnClickListener {
             startActivity(Intent(requireContext(), WebActivity::class.java))
         }
+        view.findViewById<View>(R.id.rowTest).setOnClickListener { runTest() }
         val logout = View.OnClickListener { confirmLogout() }
         view.findViewById<View>(R.id.rowLogout).setOnClickListener(logout)
         view.findViewById<View>(R.id.accountCard).setOnClickListener(logout)
+    }
+
+    private fun runTest() {
+        val dialog = AlertDialog.Builder(requireContext())
+            .setTitle("Connection test")
+            .setMessage("Testing… this takes a few seconds.")
+            .setPositiveButton("Close", null)
+            .create()
+        dialog.show()
+        viewLifecycleOwner.lifecycleScope.launch {
+            val report = try { Ig.selfTest() } catch (e: Exception) { "Test crashed: ${e.message}" }
+            dialog.setMessage(report)
+        }
     }
 
     private fun confirmLogout() {

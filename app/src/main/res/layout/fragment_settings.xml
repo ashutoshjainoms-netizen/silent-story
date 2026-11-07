@@ -78,6 +78,11 @@
                 android:text="🌐  Browse Instagram\nOpen posts and reels to download them, also anonymous." />
 
             <TextView
+                android:id="@+id/rowTest"
+                style="@style/GhostRow"
+                android:text="🧪  Connection test\nChecks login, stories, search and profiles in one go." />
+
+            <TextView
                 style="@style/GhostRow"
                 android:text="📁  Downloads\nPictures / GhostView" />
 

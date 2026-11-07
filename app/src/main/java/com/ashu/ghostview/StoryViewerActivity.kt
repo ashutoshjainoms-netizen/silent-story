@@ -55,6 +55,7 @@ class StoryViewerActivity : AppCompatActivity() {
     private lateinit var username: TextView
     private lateinit var ago: TextView
     private lateinit var btnMore: View
+    private lateinit var message: TextView
     private var muted = false
     private lateinit var player: ExoPlayer
     private lateinit var store: Store
@@ -90,6 +91,7 @@ class StoryViewerActivity : AppCompatActivity() {
         username = findViewById(R.id.username)
         ago = findViewById(R.id.ago)
         btnMore = findViewById(R.id.btnMore)
+        message = findViewById(R.id.message)
         muted = getSharedPreferences("ghost", MODE_PRIVATE).getBoolean("muted", false)
 
         val ids = intent.getStringArrayListExtra("ids") ?: arrayListOf()
@@ -196,6 +198,7 @@ class StoryViewerActivity : AppCompatActivity() {
         username.text = u.username
         avatar.loadCircle(u.pic)
         items = emptyList()
+        message.isVisible = false
         bars.removeAllViews()
         player.stop()
         image.setImageDrawable(null)
@@ -206,8 +209,7 @@ class StoryViewerActivity : AppCompatActivity() {
             try {
                 val list = Ig.stories(u.id)
                 if (list.isEmpty()) {
-                    Toast.makeText(this@StoryViewerActivity, "@${u.username} has no active stories", Toast.LENGTH_SHORT).show()
-                    nextUser()
+                    showMessage("@${u.username} has no stories right now.")
                     return@launch
                 }
                 // Start at the first story you haven't watched yet (like Instagram does).
@@ -220,8 +222,7 @@ class StoryViewerActivity : AppCompatActivity() {
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                Toast.makeText(this@StoryViewerActivity, e.message, Toast.LENGTH_LONG).show()
-                finish()
+                showMessage(e.message ?: "Couldn't load this story.")
             }
         }
     }
@@ -244,6 +245,7 @@ class StoryViewerActivity : AppCompatActivity() {
 
     private fun showItem() {
         val it = current() ?: return
+        message.isVisible = false
         elapsed = 0
         for (i in items.indices) bar(i)?.progress = if (i < itemIdx) 1000 else 0
         ago.text = timeAgo(it.takenAt)
@@ -284,13 +286,22 @@ class StoryViewerActivity : AppCompatActivity() {
         if (!cur.isVideo && frac >= 1f) next()
     }
 
+    private fun showMessage(text: String) {
+        loading.isVisible = false
+        image.isVisible = false
+        playerView.isVisible = false
+        val more = if (userIdx < users.size - 1) "\n\nTap to go to the next person." else "\n\nTap ✕ to close."
+        message.text = text + more
+        message.isVisible = true
+    }
+
     private fun next() {
-        if (items.isEmpty()) return
+        if (items.isEmpty()) { nextUser(); return }
         if (itemIdx < items.size - 1) { itemIdx++; showItem() } else nextUser()
     }
 
     private fun prev() {
-        if (items.isEmpty()) return
+        if (items.isEmpty()) { if (userIdx > 0) { userIdx--; loadUser() }; return }
         when {
             itemIdx > 0 -> { itemIdx--; showItem() }
             userIdx > 0 -> { userIdx--; loadUser() }
