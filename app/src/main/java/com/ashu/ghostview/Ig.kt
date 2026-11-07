@@ -37,30 +37,70 @@ object Ig {
         CookieManager.getInstance().flush()
     }
 
-    private suspend fun get(path: String): JSONObject = withContext(Dispatchers.IO) {
-        val c = URL(BASE + path).openConnection() as HttpURLConnection
+    // Instagram's iPhone app identity: its API host (i.instagram.com) accepts the same session cookies.
+    private const val APP_UA = "Instagram 309.1.0.41.113 (iPhone13,2; iOS 16_6; en_US; en-US; scale=3.00; 1170x2532; 541635890)"
+
+    private class Reply(val code: Int, val text: String, val finalUrl: String)
+
+    private fun fetch(url: String, mobile: Boolean): Reply {
+        val c = URL(url).openConnection() as HttpURLConnection
         try {
+            c.instanceFollowRedirects = false
             c.connectTimeout = 15000
             c.readTimeout = 20000
-            c.setRequestProperty("User-Agent", UA)
+            c.setRequestProperty("User-Agent", if (mobile) APP_UA else UA)
             c.setRequestProperty("Cookie", cookies())
-            c.setRequestProperty("X-IG-App-ID", APP_ID)
+            c.setRequestProperty("X-IG-App-ID", if (mobile) "124024574287414" else APP_ID)
             c.setRequestProperty("X-CSRFToken", cookie("csrftoken") ?: "")
+            c.setRequestProperty("X-ASBD-ID", "129477")
             c.setRequestProperty("X-Requested-With", "XMLHttpRequest")
-            c.setRequestProperty("Referer", "$BASE/")
-            c.setRequestProperty("Accept", "*/*")
-            when (val code = c.responseCode) {
-                401, 403 -> throw IgException("Session expired. Log in again from Settings.")
-                429 -> throw IgException("Instagram is rate-limiting. Wait a few minutes.")
-                !in 200..299 -> throw IgException("Instagram error $code")
+            c.setRequestProperty("Accept", "application/json, text/plain, */*")
+            c.setRequestProperty("Accept-Language", "en-US,en;q=0.9")
+            if (!mobile) {
+                c.setRequestProperty("Referer", "$BASE/")
+                c.setRequestProperty("Origin", BASE)
+                c.setRequestProperty("Sec-Fetch-Site", "same-origin")
+                c.setRequestProperty("Sec-Fetch-Mode", "cors")
+                c.setRequestProperty("Sec-Fetch-Dest", "empty")
             }
-            val text = c.inputStream.bufferedReader().use { it.readText() }
-            try { JSONObject(text) } catch (e: Exception) {
-                throw IgException("Unexpected reply from Instagram. Try logging in again.")
-            }
+            val code = c.responseCode
+            val stream = if (code in 200..299) c.inputStream else c.errorStream
+            val text = stream?.bufferedReader()?.use { it.readText() } ?: ""
+            return Reply(code, text, c.getHeaderField("Location") ?: url)
         } finally {
             c.disconnect()
         }
+    }
+
+    private fun parse(r: Reply): JSONObject? {
+        if (r.code !in 200..299) return null
+        val t = r.text.trim().removePrefix("for (;;);").trim()
+        if (!t.startsWith("{")) return null
+        return try { JSONObject(t) } catch (e: Exception) { null }
+    }
+
+    /** Tries the website API first, then the mobile app API. */
+    private suspend fun get(path: String): JSONObject = withContext(Dispatchers.IO) {
+        val attempts = listOf(BASE + path to false, "https://i.instagram.com$path" to true)
+        var last: Reply? = null
+        for ((url, mobile) in attempts) {
+            val r = try { fetch(url, mobile) } catch (e: Exception) { Reply(-1, e.message ?: "network error", url) }
+            parse(r)?.let { j ->
+                if (j.optString("status") == "fail" && j.optString("message") == "login_required") {
+                    throw IgException("Session expired. Log out and log in again from Settings.")
+                }
+                return@withContext j
+            }
+            last = r
+        }
+        val r = last!!
+        when (r.code) {
+            401, 403 -> throw IgException("Instagram refused (code ${r.code}). Log out and log in again.")
+            429 -> throw IgException("Instagram is rate-limiting. Wait a few minutes.")
+            -1 -> throw IgException("No connection: ${r.text}")
+        }
+        val snippet = r.text.replace(Regex("\\s+"), " ").take(90)
+        throw IgException("Instagram error ${r.code} on ${path.substringBefore('?')}\n→ ${r.finalUrl.take(60)}\n$snippet")
     }
 
     private fun enc(s: String) = URLEncoder.encode(s, "UTF-8")
