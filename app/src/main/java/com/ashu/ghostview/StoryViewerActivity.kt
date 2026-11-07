@@ -56,6 +56,7 @@ class StoryViewerActivity : AppCompatActivity() {
     private lateinit var ago: TextView
     private lateinit var btnMore: View
     private lateinit var message: TextView
+    private lateinit var webLoader: WebStoryLoader
     private var muted = false
     private lateinit var player: ExoPlayer
     private lateinit var store: Store
@@ -92,6 +93,7 @@ class StoryViewerActivity : AppCompatActivity() {
         ago = findViewById(R.id.ago)
         btnMore = findViewById(R.id.btnMore)
         message = findViewById(R.id.message)
+        webLoader = WebStoryLoader(this, findViewById(R.id.root))
         muted = getSharedPreferences("ghost", MODE_PRIVATE).getBoolean("muted", false)
 
         val ids = intent.getStringArrayListExtra("ids") ?: arrayListOf()
@@ -157,6 +159,7 @@ class StoryViewerActivity : AppCompatActivity() {
         super.onDestroy()
         handler.removeCallbacksAndMessages(null)
         if (::player.isInitialized) player.release()
+        if (::webLoader.isInitialized) webLoader.destroy()
     }
 
     private fun current(): StoryItem? = items.getOrNull(itemIdx)
@@ -207,9 +210,10 @@ class StoryViewerActivity : AppCompatActivity() {
         loadJob?.cancel()
         loadJob = lifecycleScope.launch {
             try {
-                val list = Ig.stories(u.id)
+                var list = try { Ig.stories(u.id) } catch (e: CancellationException) { throw e } catch (e: Exception) { emptyList() }
+                if (list.isEmpty()) list = webLoader.load(u.username)
                 if (list.isEmpty()) {
-                    showMessage("Couldn't find stories for @${u.username}.\n\n${Ig.lastNote()}")
+                    showMessage("Couldn't load stories for @${u.username}.\n\n${webLoader.lastError}\n${Ig.lastNote()}")
                     return@launch
                 }
                 // Start at the first story you haven't watched yet (like Instagram does).

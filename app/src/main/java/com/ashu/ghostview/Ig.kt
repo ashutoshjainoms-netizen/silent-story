@@ -318,10 +318,6 @@ object Ig {
         val urls = mutableListOf<String>()
         for (raw in ids) {
             val id = enc(raw)
-            val gqlVars = enc("{\"reel_ids\":[\"$raw\"],\"tag_names\":[],\"location_ids\":[],\"highlight_reel_ids\":[],\"precomposed_overlay\":false}")
-            urls += "${PAGE}/api/v1/feed/reels_media/?reel_ids=$id"
-            urls += "${PAGE}/graphql/query/?query_hash=303a4ae99711322310f25250d988f3b7&variables=$gqlVars"
-            urls += "${PAGE}/graphql/query/?query_hash=de8017ee0a7c9c45ec4260733d81ea31&variables=$gqlVars"
             urls += "$MOB/api/v1/feed/reels_media/?reel_ids=$id"
             urls += "$MOB/api/v1/feed/user/$id/story/"
         }
