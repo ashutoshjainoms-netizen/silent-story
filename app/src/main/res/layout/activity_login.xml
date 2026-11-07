@@ -44,6 +44,18 @@
             xmlns:app="http://schemas.android.com/apk/res-auto" />
     </LinearLayout>
 
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/btnEmailCode"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@color/ghost_accent"
+        android:backgroundTint="#FF171923"
+        android:layout_marginStart="8dp"
+        android:layout_marginEnd="8dp"
+        android:layout_marginBottom="8dp"
+        android:text="✉  Get code by email instead"
+        android:textColor="#FFFFFFFF" />
+
     <WebView
         android:id="@+id/web"
         android:layout_width="match_parent"

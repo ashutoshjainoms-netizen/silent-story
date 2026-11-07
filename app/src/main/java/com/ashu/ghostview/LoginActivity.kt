@@ -39,10 +39,10 @@ class LoginActivity : AppCompatActivity() {
             val url = web.url.orEmpty()
             if (isWaitingPage(url)) {
                 if (waitingSince == 0L) waitingSince = System.currentTimeMillis()
-                banner.text = "Approve the login in the Instagram app (on this phone or another one), then come back here. BlindView logs in by itself, no need to log in again."
+                if (!emailMode) banner.text = "Approve the login in the Instagram app (on this phone or another one), then come back here. BlindView logs in by itself, no need to log in again."
                 // Every 6 s ask Instagram (in the background) whether the approval went through.
                 if (System.currentTimeMillis() - lastProbe > 6000) { lastProbe = System.currentTimeMillis(); probe() }
-            } else if (waitingSince > 0L && url.contains("/accounts/login")) {
+            } else if (!emailMode && waitingSince > 0L && url.contains("/accounts/login")) {
                 banner.text = "Instagram went back to the login page. Log in again, and on the approval screen tap \"Try another way\" to get a code by SMS, WhatsApp or email instead."
             }
             handler.postDelayed(this, 1000)
@@ -59,6 +59,51 @@ class LoginActivity : AppCompatActivity() {
             
                 "fetch('/',{credentials:'include'}).catch(function(){});", null
         )
+    }
+
+    // ---------- "Get code by email" ----------
+    private var emailTries = 0
+    private var emailRunning = false
+    private var emailMode = false
+    private val emailScript by lazy { assets.open("email_code.js").bufferedReader().use { it.readText() } }
+
+    private fun startEmailCode() {
+        CookieManager.getInstance().flush()
+        if (Ig.hasSessionCookie()) { finishLogin(); return }
+        emailTries = 0
+        emailMode = true
+        if (!emailRunning) { emailRunning = true; emailStep() }
+        banner.text = "Asking Instagram to send a code to your email…"
+    }
+
+    private fun emailStep() {
+        if (done || isFinishing) { emailRunning = false; return }
+        web.evaluateJavascript(emailScript) { raw ->
+            val r = raw?.trim('"').orEmpty()
+            emailTries++
+            when (r) {
+                "login" -> {
+                    emailRunning = false
+                    emailMode = false
+                    banner.text = "Log in with your username and password first. When Instagram asks you to approve, tap \"Get code by email instead\"."
+                    return@evaluateJavascript
+                }
+                "code" -> {
+                    emailRunning = false
+                    banner.text = "Instagram sent a code to your email. Open your email, then type the code in the box below and tap Continue/Confirm."
+                    return@evaluateJavascript
+                }
+                "another" -> banner.text = "Opened \"Try another way\"…"
+                "email" -> banner.text = "Picked email…"
+                "send" -> banner.text = "Sending the code to your email…"
+            }
+            if (emailTries >= 20) {
+                emailRunning = false
+                banner.text = "Couldn't find the email option on this screen. Tap \"Try another way\" (bottom of the page) yourself and choose Email, or tap Start over and log in again."
+                return@evaluateJavascript
+            }
+            handler.postDelayed({ emailStep() }, 1500)
+        }
     }
 
     private fun finishLogin() {
@@ -83,8 +128,10 @@ class LoginActivity : AppCompatActivity() {
             CookieManager.getInstance().flush()
             if (Ig.hasSessionCookie()) finishLogin() else web.loadUrl("https://www.instagram.com/")
         }
+        findViewById<View>(R.id.btnEmailCode).setOnClickListener { startEmailCode() }
         findViewById<View>(R.id.btnRestart).setOnClickListener {
             waitingSince = 0L
+            emailMode = false
             web.loadUrl("https://www.instagram.com/accounts/login/")
         }
         with(web.settings) {
