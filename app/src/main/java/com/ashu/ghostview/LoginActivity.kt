@@ -96,10 +96,12 @@ class LoginActivity : AppCompatActivity() {
                 "another" -> banner.text = "Opened \"Try another way\"…"
                 "email" -> banner.text = "Picked email…"
                 "send" -> banner.text = "Sending the code to your email…"
+                "help" -> banner.text = "Looking in Instagram's help options…"
+                "none" -> if (emailTries % 4 == 0) banner.text = "Waiting for Instagram to show \"Try another way\"… (it can take up to a minute)"
             }
-            if (emailTries >= 20) {
+            if (emailTries >= 60) {
                 emailRunning = false
-                banner.text = "Couldn't find the email option on this screen. Tap \"Try another way\" (bottom of the page) yourself and choose Email, or tap Start over and log in again."
+                banner.text = "Instagram didn't offer another way on this screen. Easiest: pull down your notification bar, tap Instagram's \"Was this you?\" → Yes, and come back here. Or tap Start over and log in again to get a new screen."
                 return@evaluateJavascript
             }
             handler.postDelayed({ emailStep() }, 1500)
