@@ -33,6 +33,8 @@ object Ig {
             "scale=3.00; 1170x2532; 541635890)"
     private const val WWW = "https://www.instagram.com"
     private const val MOB = "https://i.instagram.com"
+    /** Marker: run this path through the invisible instagram.com page (most reliable). */
+    private const val PAGE = "page:"
     private const val WEB_APP_ID = "936619743392459"
     private const val IOS_APP_ID = "124024574287414"
 
@@ -42,6 +44,7 @@ object Ig {
     /** Short log of which server answered each request (shown by the connection test). */
     private val log = ArrayDeque<String>()
     private fun note(s: String) = synchronized(log) { log.addLast(s); while (log.size > 40) log.removeFirst() }
+    fun lastNote(): String = synchronized(log) { log.lastOrNull() ?: "" }
 
     // ---------------- session ----------------
     fun cookies(): String = CookieManager.getInstance().getCookie(WWW) ?: ""
@@ -117,8 +120,17 @@ object Ig {
         var emptyButValid: JSONObject? = null
         val problems = mutableListOf<String>()
         for (url in urls) {
-            val host = if (url.startsWith(MOB)) "app" else "web"
-            val r = try { fetch(url) } catch (e: Exception) { Reply(-1, e.message ?: "error", null) }
+            val host = when {
+                url.startsWith(PAGE) -> "page"
+                url.startsWith(MOB) -> "app"
+                else -> "web"
+            }
+            val r = try {
+                if (url.startsWith(PAGE)) {
+                    val (code, body) = PageFetch.get(url.removePrefix(PAGE))
+                    Reply(code, body, null)
+                } else fetch(url)
+            } catch (e: Exception) { Reply(-1, e.message ?: "error", null) }
             val j = parse(r)
             if (j == null) {
                 problems += "$host: ${describe(r)}"
@@ -205,6 +217,7 @@ object Ig {
     /** Everyone you follow who currently has a story. */
     suspend fun tray(): List<TrayEntry> {
         val j = first("story list", listOf(
+            "${PAGE}/api/v1/feed/reels_tray/",
             "$MOB/api/v1/feed/reels_tray/",
             "$WWW/api/v1/feed/reels_tray/"
         )) { (it.optJSONArray("tray")?.length() ?: 0) > 0 }
@@ -229,6 +242,7 @@ object Ig {
         trayItems[userId]?.let { if (it.isNotEmpty()) return it }
         val id = enc(userId)
         val j = first("stories", listOf(
+            "${PAGE}/api/v1/feed/reels_media/?reel_ids=$id",
             "$MOB/api/v1/feed/reels_media/?reel_ids=$id",
             "$MOB/api/v1/feed/user/$id/story/",
             "$MOB/api/v1/feed/user/$id/reel_media/",
@@ -240,6 +254,7 @@ object Ig {
     suspend fun userByName(username: String): IgUser {
         val u = enc(username)
         val j = first("profile", listOf(
+            "${PAGE}/api/v1/users/web_profile_info/?username=$u",
             "$MOB/api/v1/users/web_profile_info/?username=$u",
             "$WWW/api/v1/users/web_profile_info/?username=$u",
             "$MOB/api/v1/users/$u/usernameinfo/"
@@ -251,6 +266,7 @@ object Ig {
 
     suspend fun userById(id: String): IgUser {
         val j = first("profile", listOf(
+            "${PAGE}/api/v1/users/${enc(id)}/info/",
             "$MOB/api/v1/users/${enc(id)}/info/",
             "$WWW/api/v1/users/${enc(id)}/info/"
         )) { it.optJSONObject("user") != null }
@@ -266,6 +282,7 @@ object Ig {
     suspend fun search(query: String): List<IgUser> {
         val q = enc(query)
         val j = first("search", listOf(
+            "${PAGE}/api/v1/web/search/topsearch/?context=blended&query=$q",
             "$MOB/api/v1/users/search/?q=$q&count=30",
             "$WWW/api/v1/web/search/topsearch/?context=blended&query=$q",
             "$MOB/api/v1/fbsearch/topsearch_flat/?query=$q&context=blended"

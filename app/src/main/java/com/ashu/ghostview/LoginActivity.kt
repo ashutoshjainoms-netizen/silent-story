@@ -18,7 +18,7 @@ class LoginActivity : AppCompatActivity() {
     private val check = object : Runnable {
         override fun run() {
             CookieManager.getInstance().flush()
-            if (Ig.isLoggedIn()) finish() else handler.postDelayed(this, 1000)
+            if (Ig.isLoggedIn()) { PageFetch.reset(); finish() } else handler.postDelayed(this, 1000)
         }
     }
 

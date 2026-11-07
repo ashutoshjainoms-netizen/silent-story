@@ -209,7 +209,7 @@ class StoryViewerActivity : AppCompatActivity() {
             try {
                 val list = Ig.stories(u.id)
                 if (list.isEmpty()) {
-                    showMessage("@${u.username} has no stories right now.")
+                    showMessage("Couldn't find stories for @${u.username}.\n\n${Ig.lastNote()}")
                     return@launch
                 }
                 // Start at the first story you haven't watched yet (like Instagram does).
