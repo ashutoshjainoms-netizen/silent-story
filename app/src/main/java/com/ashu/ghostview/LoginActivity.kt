@@ -33,8 +33,8 @@ class LoginActivity : AppCompatActivity() {
         private const val DESKTOP_UA =
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) " +
             "Chrome/126.0.0.0 Safari/537.36"
-
-// (no page classifier needed: the screen is left entirely to Instagram)
+    }
+    // (no page classifier needed: the screen is left entirely to Instagram)
 
     private lateinit var web: WebView
     private val handler = Handler(Looper.getMainLooper())
