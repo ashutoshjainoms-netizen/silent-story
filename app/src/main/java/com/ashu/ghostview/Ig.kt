@@ -309,7 +309,6 @@ object Ig {
     suspend fun tray(): List<TrayEntry> {
         val j = first("story list", listOf(
             "${PAGE}/api/v1/feed/reels_tray/",
-            "$MOB/api/v1/feed/reels_tray/",
             "$WWW/api/v1/feed/reels_tray/"
         )) { (it.optJSONArray("tray")?.length() ?: 0) > 0 }
         val arr = j.optJSONArray("tray") ?: return emptyList()
@@ -330,34 +329,19 @@ object Ig {
         }
     }
 
-    /** All current stories of one user. */
-    suspend fun stories(userId: String): List<StoryItem> {
-        trayItems[userId]?.let { if (it.isNotEmpty()) return it }
-        val ids = listOfNotNull(userId, reelIds[userId]).filter { it.isNotEmpty() }.distinct()
-        val urls = mutableListOf<String>()
-        for (raw in ids) {
-            val id = enc(raw)
-            urls += "$MOB/api/v1/feed/reels_media/?reel_ids=$id"
-            urls += "$MOB/api/v1/feed/user/$id/story/"
-        }
-        val key = ids.first()
-        val j = try {
-            first("stories (id $key)", urls) { r -> ids.any { (reelIn(r, it)?.optJSONArray("items")?.length() ?: 0) > 0 } }
-        } catch (e: Exception) {
-            trayPartial[userId]?.let { if (it.isNotEmpty()) return it }
-            throw e
-        }
-        val items = ids.firstNotNullOfOrNull { id -> itemsOf(reelIn(j, id)?.optJSONArray("items")).ifEmpty { null } }
-        return items ?: trayPartial[userId] ?: emptyList()
-    }
+    /**
+     * Stories that already came with the story list. Returns empty when none are cached;
+     * the viewer then loads them through Instagram's own story page (WebStoryLoader),
+     * which is what a normal browser does, so no extra API requests are made.
+     */
+    fun stories(userId: String): List<StoryItem> =
+        trayItems[userId]?.takeIf { it.isNotEmpty() } ?: emptyList()
 
     suspend fun userByName(username: String): IgUser {
         val u = enc(username)
         val j = first("profile", listOf(
             "${PAGE}/api/v1/users/web_profile_info/?username=$u",
-            "$MOB/api/v1/users/web_profile_info/?username=$u",
             "$WWW/api/v1/users/web_profile_info/?username=$u",
-            "$MOB/api/v1/users/$u/usernameinfo/"
         )) { it.optJSONObject("data")?.optJSONObject("user") != null || it.optJSONObject("user") != null }
         val user = j.optJSONObject("data")?.optJSONObject("user") ?: j.optJSONObject("user")
             ?: throw IgException("Could not find @$username")
@@ -367,7 +351,6 @@ object Ig {
     suspend fun userById(id: String): IgUser {
         val j = first("profile", listOf(
             "${PAGE}/api/v1/users/${enc(id)}/info/",
-            "$MOB/api/v1/users/${enc(id)}/info/",
             "$WWW/api/v1/users/${enc(id)}/info/"
         )) { it.optJSONObject("user") != null }
         return userFrom(j.optJSONObject("user") ?: throw IgException("User not found"))
@@ -383,9 +366,7 @@ object Ig {
         val q = enc(query)
         val j = first("search", listOf(
             "${PAGE}/api/v1/web/search/topsearch/?context=blended&query=$q",
-            "$MOB/api/v1/users/search/?q=$q&count=30",
             "$WWW/api/v1/web/search/topsearch/?context=blended&query=$q",
-            "$MOB/api/v1/fbsearch/topsearch_flat/?query=$q&context=blended"
         )) { (it.optJSONArray("users")?.length() ?: 0) > 0 || (it.optJSONArray("list")?.length() ?: 0) > 0 }
         val out = mutableListOf<IgUser>()
         j.optJSONArray("users")?.let { arr ->
@@ -410,8 +391,7 @@ object Ig {
         try { tray = tray(); line(true, "Story list", "${tray.size} people with stories") } catch (e: Exception) { line(false, "Story list", e.message ?: "") }
         val target = tray.firstOrNull()
         if (target != null) {
-            trayItems.remove(target.user.id)   // force a real network fetch for the test
-            try {
+                        try {
                 val s = stories(target.user.id)
                 sb.append(if (s.isNotEmpty()) "✅ " else "ℹ️ ").append("Story (quick method): ")
                     .append(if (s.isNotEmpty()) "${s.size} stories" else "not available, the viewer uses Instagram's story page instead (normal)").append("\n\n")
