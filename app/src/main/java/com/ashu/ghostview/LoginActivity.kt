@@ -13,45 +13,37 @@ import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
 
 /**
- * Instagram's own, official login page, full screen, with nothing added by BlindView.
- * Password, approval and codes all happen on Instagram's page.
+ * Instagram's own, official login page, full screen. Password, captcha, approval and
+ * codes all happen on Instagram's page; BlindView adds nothing on top.
  *
- * Two things the loop does:
- *  - every second: if Instagram has set the login cookie, save it and open the app.
- *  - on a "waiting for approval" screen only: refresh it every few seconds so that
- *    when you approve in the official Instagram app, BlindView notices and continues.
- *    A code-entry screen is NEVER refreshed, so a code you are typing is never lost.
+ * Detecting login:
+ *  - every second it checks (passively) whether Instagram has set the login cookie.
+ *  - it NEVER refreshes on a timer. The only refresh is a SINGLE one when you return
+ *    to BlindView after approving in the official Instagram app -- that one reload lets
+ *    Instagram's page pick up the approval and move on. If it still shows the waiting
+ *    screen a few seconds later, it opens the Instagram home page once to finish.
+ *  - captcha / password / code screens are never touched.
  *
  * The saved login stays until you tap Settings -> Log out.
  */
 class LoginActivity : AppCompatActivity() {
     companion object {
-        /** True while the login screen exists, so Home never opens a second, fresh one. */
         @Volatile var open = false
         private const val LOGIN_URL = "https://www.instagram.com/accounts/login/"
-        private const val RELOAD_EVERY = 5000L   // refresh a waiting screen this often
+        private const val HOME_URL = "https://www.instagram.com/"
 
-        /** Classifies the current page so we only refresh the safe ones. */
-        /**
-         * Classifies the current page. Only a passive "approve on another device" screen
-         * returns "wait" (safe to refresh). ANYTHING you must touch -- a captcha, the
-         * password form, a code box -- returns "hold" and is never refreshed.
-         */
+        /** "wait" = passive approval screen (safe to reload once). "hold" = leave it alone. */
         private const val CLASSIFY = """
 (function(){
   function vis(e){var r=e.getBoundingClientRect();return r.width>0&&r.height>0;}
-  // "I'm not a robot" / reCAPTCHA -- you must tick it; a refresh would reset it
   if(document.querySelector('iframe[src*="recaptcha"],iframe[title*="recaptcha"],.g-recaptcha,[data-sitekey]'))return 'hold';
   var t=(document.body?document.body.innerText:'').toLowerCase();
   if(t.indexOf('not a robot')>=0||t.indexOf('recaptcha')>=0||t.indexOf('security check')>=0)return 'hold';
-  // password form
   var pw=document.querySelector('input[type=password]');
   if(pw&&vis(pw))return 'hold';
-  // any box you must type into (codes, email, etc.)
   var ins=document.querySelectorAll('input');
   for(var i=0;i<ins.length;i++){var el=ins[i];var ty=(el.type||'').toLowerCase();
     if((ty==='text'||ty==='tel'||ty==='number'||ty==='email'||ty===''||el.getAttribute('inputmode')==='numeric')&&vis(el)&&!el.disabled&&!el.readOnly)return 'hold';}
-  // ONLY the passive "waiting for your approval on another device" screen
   if(t.indexOf('check your notifications')>=0||t.indexOf('approve from the other device')>=0||t.indexOf('waiting for approval')>=0||t.indexOf('sent a notification')>=0||t.indexOf('approve the login')>=0)return 'wait';
   return 'hold';
 })()
@@ -61,21 +53,13 @@ class LoginActivity : AppCompatActivity() {
     private lateinit var web: WebView
     private val handler = Handler(Looper.getMainLooper())
     private var done = false
-    private var lastReload = 0L
+    private var nudging = false   // a single resume-triggered reload sequence is in flight
 
+    /** Passive: only watches for the cookie. Never reloads. */
     private val check = object : Runnable {
         override fun run() {
             CookieManager.getInstance().flush()
             if (Ig.hasSessionCookie()) { finishLogin(); return }
-            if (System.currentTimeMillis() - lastReload >= RELOAD_EVERY) {
-                web.evaluateJavascript(CLASSIFY) { raw ->
-                    val kind = raw?.trim('"').orEmpty()
-                    if (kind == "wait" && !done) {
-                        lastReload = System.currentTimeMillis()
-                        web.reload()   // re-ask Instagram whether the approval went through
-                    }
-                }
-            }
             handler.postDelayed(this, 1000)
         }
     }
@@ -87,6 +71,30 @@ class LoginActivity : AppCompatActivity() {
         PageFetch.reset()
         open = false
         finish()
+    }
+
+    /**
+     * Called once when the user comes back (usually straight after approving in the IG app).
+     * Reload the waiting screen a single time; if it's still waiting ~6s later, open the
+     * home page once so an already-approved session is picked up.
+     */
+    private fun nudgeIfWaiting() {
+        if (done || nudging) return
+        web.evaluateJavascript(CLASSIFY) { raw ->
+            if (done) return@evaluateJavascript
+            if (raw?.trim('"') == "wait") {
+                nudging = true
+                web.reload()
+                handler.postDelayed({
+                    CookieManager.getInstance().flush()
+                    if (done || Ig.hasSessionCookie()) { nudging = false; return@postDelayed }
+                    web.evaluateJavascript(CLASSIFY) { again ->
+                        if (!done && again?.trim('"') == "wait") web.loadUrl(HOME_URL)
+                        nudging = false
+                    }
+                }, 6000)
+            }
+        }
     }
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -107,7 +115,7 @@ class LoginActivity : AppCompatActivity() {
         web.webViewClient = object : WebViewClient() {
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                 val s = request.url.scheme
-                return s != "http" && s != "https"   // stay on Instagram's web page
+                return s != "http" && s != "https"
             }
             override fun onPageStarted(view: WebView, url: String?, favicon: Bitmap?) {
                 if (Ig.hasSessionCookie()) finishLogin()
@@ -120,7 +128,7 @@ class LoginActivity : AppCompatActivity() {
 
         val restored = savedInstanceState?.getBundle("web")?.let { web.restoreState(it) != null } == true
         if (!restored) {
-            Ig.forgetSaved()   // only reached when there is no login at all
+            Ig.forgetSaved()
             web.loadUrl(LOGIN_URL)
         }
 
@@ -135,10 +143,9 @@ class LoginActivity : AppCompatActivity() {
         super.onResume()
         CookieManager.getInstance().flush()
         if (Ig.hasSessionCookie()) { finishLogin(); return }
-        // Just came back (likely from approving in the official app): classify once now,
-        // so a waiting screen refreshes right away instead of after the next interval.
-        lastReload = 0L
         handler.post(check)
+        // Give the page a moment to settle after the app comes forward, then nudge once.
+        handler.postDelayed({ nudgeIfWaiting() }, 700)
     }
 
     override fun onPause() { super.onPause(); handler.removeCallbacks(check) }
