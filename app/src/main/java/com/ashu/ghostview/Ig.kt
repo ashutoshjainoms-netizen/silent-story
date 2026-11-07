@@ -27,7 +27,8 @@ data class StoryItem(val pk: String, val url: String, val isVideo: Boolean, val 
  * actually returns data, so a change on one of them doesn't break the app.
  */
 object Ig {
-    const val UA = "Mozilla/5.0 (Linux; Android 14; SM-S918B) AppleWebKit/537.36 " +
+    /** Browser identity. Replaced at start-up with this phone's real Chrome version (see init). */
+    @Volatile var UA = "Mozilla/5.0 (Linux; Android 14; SM-S918B) AppleWebKit/537.36 " +
             "(KHTML, like Gecko) Chrome/130.0.0.0 Mobile Safari/537.36"
     private const val APP_UA = "Instagram 309.1.0.41.113 (iPhone13,2; iOS 16_6; en_US; en-US; " +
             "scale=3.00; 1170x2532; 541635890)"
@@ -58,7 +59,22 @@ object Ig {
     private var app: android.content.Context? = null
     private val KEEP_NAMES = listOf("sessionid", "ds_user_id", "csrftoken", "mid", "ig_did", "rur", "datr")
 
-    fun init(ctx: android.content.Context) { app = ctx.applicationContext; restoreSession() }
+    fun init(ctx: android.content.Context) {
+        app = ctx.applicationContext
+        UA = realBrowserUa(ctx) ?: UA
+        restoreSession()
+    }
+
+    /**
+     * The phone's own WebView identity, cleaned to look like normal Chrome, so the version
+     * Instagram reads from the user agent matches what the browser engine itself reports.
+     */
+    private fun realBrowserUa(ctx: android.content.Context): String? = try {
+        android.webkit.WebSettings.getDefaultUserAgent(ctx)
+            .replace("; wv)", ")")
+            .replace(Regex("Version/\\d+(\\.\\d+)* "), "")
+            .takeIf { it.contains("Chrome/") }
+    } catch (_: Exception) { null }
 
     fun appContext(): android.content.Context? = app
 

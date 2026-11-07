@@ -111,7 +111,7 @@ class WebActivity : AppCompatActivity() {
             mediaPlaybackRequiresUserGesture = false
             loadWithOverviewMode = true
             useWideViewPort = true
-            userAgentString = UA
+            userAgentString = Ig.UA
             setSupportMultipleWindows(false)
         }
         CookieManager.getInstance().setAcceptCookie(true)
@@ -217,7 +217,7 @@ class WebActivity : AppCompatActivity() {
                     .setMimeType(if (isVideo) "video/mp4" else "image/jpeg")
                     .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
                     .setDestinationInExternalPublicDir(Environment.DIRECTORY_PICTURES, "BlindView/$file")
-                    .addRequestHeader("User-Agent", UA)
+                    .addRequestHeader("User-Agent", Ig.UA)
                     .addRequestHeader("Referer", HOME)
                 dm.enqueue(req)
                 ok++

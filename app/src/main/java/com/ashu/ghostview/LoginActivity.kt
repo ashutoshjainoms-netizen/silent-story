@@ -27,7 +27,6 @@ class LoginActivity : AppCompatActivity() {
 
     private lateinit var web: WebView
     private val handler = Handler(Looper.getMainLooper())
-    private var lastProbe = 0L
     private var done = false
 
     /** Every second: did Instagram hand over the login cookie yet? */
@@ -35,18 +34,10 @@ class LoginActivity : AppCompatActivity() {
         override fun run() {
             CookieManager.getInstance().flush()
             if (Ig.hasSessionCookie()) { finishLogin(); return }
-            // While Instagram waits for approval, quietly ask it every 6 s whether it went through.
-            if (isWaitingPage(web.url.orEmpty()) && System.currentTimeMillis() - lastProbe > 6000) {
-                lastProbe = System.currentTimeMillis()
-                web.evaluateJavascript("fetch('/',{credentials:'include'}).catch(function(){});", null)
-            }
+            // Only watches for the login cookie. Never touches Instagram's page.
             handler.postDelayed(this, 1000)
         }
     }
-
-    private fun isWaitingPage(url: String) =
-        url.contains("challenge") || url.contains("two_factor") || url.contains("auth_platform") ||
-            url.contains("codeentry") || url.contains("approval")
 
     private fun finishLogin() {
         if (done) return
@@ -101,10 +92,9 @@ class LoginActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        // Back from approving in the Instagram app: refresh Instagram's page so it sees the approval.
+        // Never reload: coming back from Gmail must keep Instagram's code page exactly as it was.
         CookieManager.getInstance().flush()
         if (Ig.hasSessionCookie()) { finishLogin(); return }
-        if (isWaitingPage(web.url.orEmpty())) web.reload()
         handler.post(check)
     }
 
