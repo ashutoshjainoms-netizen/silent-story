@@ -18,11 +18,9 @@ import androidx.appcompat.app.AppCompatActivity
  *
  * Detecting login:
  *  - every second it checks (passively) whether Instagram has set the login cookie.
- *  - it NEVER refreshes on a timer. The only refresh is a SINGLE one when you return
- *    to BlindView after approving in the official Instagram app -- that one reload lets
- *    Instagram's page pick up the approval and move on. If it still shows the waiting
- *    screen a few seconds later, it opens the Instagram home page once to finish.
- *  - captcha / password / code screens are never touched.
+ *  - it NEVER reloads or navigates the page. After you approve / match the number,
+ *    Instagram's own page finishes the login and sets the cookie; BlindView just
+ *    watches for that cookie and then opens the app. Nothing is done to the page.
  *
  * The saved login stays until you tap Settings -> Log out.
  */
@@ -30,35 +28,17 @@ class LoginActivity : AppCompatActivity() {
     companion object {
         @Volatile var open = false
         private const val LOGIN_URL = "https://www.instagram.com/accounts/login/"
-        private const val HOME_URL = "https://www.instagram.com/"
         // Desktop Chrome identity, so Instagram serves its desktop login flow, whose
         // device-approval step completes more reliably inside an in-app browser.
         private const val DESKTOP_UA =
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) " +
             "Chrome/126.0.0.0 Safari/537.36"
 
-        /** "wait" = passive approval screen (safe to reload once). "hold" = leave it alone. */
-        private const val CLASSIFY = """
-(function(){
-  function vis(e){var r=e.getBoundingClientRect();return r.width>0&&r.height>0;}
-  if(document.querySelector('iframe[src*="recaptcha"],iframe[title*="recaptcha"],.g-recaptcha,[data-sitekey]'))return 'hold';
-  var t=(document.body?document.body.innerText:'').toLowerCase();
-  if(t.indexOf('not a robot')>=0||t.indexOf('recaptcha')>=0||t.indexOf('security check')>=0)return 'hold';
-  var pw=document.querySelector('input[type=password]');
-  if(pw&&vis(pw))return 'hold';
-  var ins=document.querySelectorAll('input');
-  for(var i=0;i<ins.length;i++){var el=ins[i];var ty=(el.type||'').toLowerCase();
-    if((ty==='text'||ty==='tel'||ty==='number'||ty==='email'||ty===''||el.getAttribute('inputmode')==='numeric')&&vis(el)&&!el.disabled&&!el.readOnly)return 'hold';}
-  if(t.indexOf('check your notifications')>=0||t.indexOf('approve from the other device')>=0||t.indexOf('waiting for approval')>=0||t.indexOf('sent a notification')>=0||t.indexOf('approve the login')>=0)return 'wait';
-  return 'hold';
-})()
-"""
-    }
+// (no page classifier needed: the screen is left entirely to Instagram)
 
     private lateinit var web: WebView
     private val handler = Handler(Looper.getMainLooper())
     private var done = false
-    private var nudging = false   // a single resume-triggered reload sequence is in flight
 
     /** Passive: only watches for the cookie. Never reloads. */
     private val check = object : Runnable {
@@ -76,30 +56,6 @@ class LoginActivity : AppCompatActivity() {
         PageFetch.reset()
         open = false
         finish()
-    }
-
-    /**
-     * Called once when the user comes back (usually straight after approving in the IG app).
-     * Reload the waiting screen a single time; if it's still waiting ~6s later, open the
-     * home page once so an already-approved session is picked up.
-     */
-    private fun nudgeIfWaiting() {
-        if (done || nudging) return
-        web.evaluateJavascript(CLASSIFY) { raw ->
-            if (done) return@evaluateJavascript
-            if (raw?.trim('"') == "wait") {
-                nudging = true
-                web.reload()
-                handler.postDelayed({
-                    CookieManager.getInstance().flush()
-                    if (done || Ig.hasSessionCookie()) { nudging = false; return@postDelayed }
-                    web.evaluateJavascript(CLASSIFY) { again ->
-                        if (!done && again?.trim('"') == "wait") web.loadUrl(HOME_URL)
-                        nudging = false
-                    }
-                }, 6000)
-            }
-        }
     }
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -153,9 +109,9 @@ class LoginActivity : AppCompatActivity() {
         super.onResume()
         CookieManager.getInstance().flush()
         if (Ig.hasSessionCookie()) { finishLogin(); return }
+        // Do NOT reload or navigate. After you match the number, Instagram's own page
+        // finishes the login by itself; we just watch for the cookie it then sets.
         handler.post(check)
-        // Give the page a moment to settle after the app comes forward, then nudge once.
-        handler.postDelayed({ nudgeIfWaiting() }, 700)
     }
 
     override fun onPause() { super.onPause(); handler.removeCallbacks(check) }
