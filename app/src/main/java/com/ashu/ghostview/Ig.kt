@@ -87,8 +87,19 @@ object Ig {
         cm.flush()
     }
 
-    /** Raw check without restoring anything (used while logging in). */
-    fun hasSessionCookie() = cookie("sessionid")?.isNotEmpty() == true
+    /** Raw check without restoring anything (used while logging in). Looks at every Instagram host. */
+    fun hasSessionCookie(): Boolean {
+        val cm = CookieManager.getInstance()
+        for (host in listOf(WWW, "https://instagram.com", MOB)) {
+            val c = cm.getCookie(host) ?: continue
+            val sid = c.split(";").map { it.trim() }.firstOrNull { it.startsWith("sessionid=") }?.substringAfter("=")
+            if (!sid.isNullOrEmpty()) {
+                if (host != WWW) cm.setCookie(WWW, "sessionid=$sid; Domain=.instagram.com; Path=/; Max-Age=31536000; Secure")
+                return true
+            }
+        }
+        return false
+    }
 
     /** Forget the saved session (it expired) so it can't interfere with a fresh login. */
     fun forgetSaved() { prefs()?.edit()?.clear()?.apply() }

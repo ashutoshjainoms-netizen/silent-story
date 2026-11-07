@@ -5,11 +5,12 @@
     android:orientation="vertical">
 
     <TextView
+        android:id="@+id/banner"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:background="@color/ghost_accent"
         android:padding="12dp"
-        android:text="Log in to Instagram below. If Instagram asks you to approve on another device, approve it there, then tap Continue."
+        android:text="Log in to Instagram below. If Instagram asks for approval, just approve on your other phone. GhostView logs in by itself."
         android:textColor="#FFFFFFFF"
         android:textSize="14sp" />
 
@@ -29,7 +30,7 @@
             android:layout_weight="1"
             android:layout_marginEnd="6dp"
             android:backgroundTint="#FFFFFFFF"
-            android:text="Approved? Continue"
+            android:text="Check now"
             android:textColor="@color/ghost_accent" />
 
         <com.google.android.material.button.MaterialButton
