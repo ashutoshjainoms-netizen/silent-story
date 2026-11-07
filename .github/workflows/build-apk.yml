@@ -5,6 +5,9 @@ on:
   push:
     branches: [ main, blindview ]
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -16,16 +19,22 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
       - name: Build debug APK
-        run: gradle --no-daemon assembleDebug
+        run: gradle --no-daemon assembleDebug --stacktrace
+      - name: Rename APK
+        run: cp app/build/outputs/apk/debug/app-debug.apk BlindView.apk
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: BlindView-debug-apk
-          path: app/build/outputs/apk/debug/app-debug.apk
+          path: BlindView.apk
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete blindview-latest --yes --cleanup-tag || true
+          gh release create blindview-latest BlindView.apk --target "${{ github.sha }}" --title "BlindView (build ${{ github.run_number }})" --notes "Latest BlindView build" --latest=false
