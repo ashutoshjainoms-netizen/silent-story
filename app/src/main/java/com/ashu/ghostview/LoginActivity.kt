@@ -14,8 +14,14 @@ import androidx.appcompat.app.AppCompatActivity
 
 /**
  * Instagram's own, official login page, full screen, with nothing added by BlindView.
- * Everything (password, approval, codes, "Try another way") is done on Instagram's page.
- * As soon as Instagram gives the login cookie, BlindView saves it and opens the app.
+ * Password, approval and codes all happen on Instagram's page.
+ *
+ * Two things the loop does:
+ *  - every second: if Instagram has set the login cookie, save it and open the app.
+ *  - on a "waiting for approval" screen only: refresh it every few seconds so that
+ *    when you approve in the official Instagram app, BlindView notices and continues.
+ *    A code-entry screen is NEVER refreshed, so a code you are typing is never lost.
+ *
  * The saved login stays until you tap Settings -> Log out.
  */
 class LoginActivity : AppCompatActivity() {
@@ -23,18 +29,42 @@ class LoginActivity : AppCompatActivity() {
         /** True while the login screen exists, so Home never opens a second, fresh one. */
         @Volatile var open = false
         private const val LOGIN_URL = "https://www.instagram.com/accounts/login/"
+        private const val RELOAD_EVERY = 5000L   // refresh a waiting screen this often
+
+        /** Classifies the current page so we only refresh the safe ones. */
+        private const val CLASSIFY = """
+(function(){
+  function vis(e){var r=e.getBoundingClientRect();return r.width>0&&r.height>0;}
+  var p=document.querySelector('input[type=password]');
+  if(p&&vis(p))return 'login';
+  var c=document.querySelector('input[autocomplete=one-time-code],input[name=verificationCode],input[name=security_code],input[name=code],input[inputmode=numeric]');
+  if(c&&vis(c))return 'code';
+  var t=(document.body?document.body.innerText:'').toLowerCase();
+  if(t.indexOf('check your notifications')>=0||t.indexOf('approve the login')>=0||t.indexOf('waiting for approval')>=0||t.indexOf('sent a notification')>=0||t.indexOf('approve from the other device')>=0)return 'wait';
+  if(/challenge|two_factor|auth_platform|approval/.test(location.href))return 'wait';
+  return 'other';
+})()
+"""
     }
 
     private lateinit var web: WebView
     private val handler = Handler(Looper.getMainLooper())
     private var done = false
+    private var lastReload = 0L
 
-    /** Every second: did Instagram hand over the login cookie yet? */
     private val check = object : Runnable {
         override fun run() {
             CookieManager.getInstance().flush()
             if (Ig.hasSessionCookie()) { finishLogin(); return }
-            // Only watches for the login cookie. Never touches Instagram's page.
+            if (System.currentTimeMillis() - lastReload >= RELOAD_EVERY) {
+                web.evaluateJavascript(CLASSIFY) { raw ->
+                    val kind = raw?.trim('"').orEmpty()
+                    if (kind == "wait" && !done) {
+                        lastReload = System.currentTimeMillis()
+                        web.reload()   // re-ask Instagram whether the approval went through
+                    }
+                }
+            }
             handler.postDelayed(this, 1000)
         }
     }
@@ -92,9 +122,11 @@ class LoginActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        // Never reload: coming back from Gmail must keep Instagram's code page exactly as it was.
         CookieManager.getInstance().flush()
         if (Ig.hasSessionCookie()) { finishLogin(); return }
+        // Just came back (likely from approving in the official app): classify once now,
+        // so a waiting screen refreshes right away instead of after the next interval.
+        lastReload = 0L
         handler.post(check)
     }
 
