@@ -184,7 +184,8 @@ class SettingsFragment : Fragment(R.layout.fragment_settings) {
                 name.text = me.username
                 avatar.loadCircle(me.pic)
             } else {
-                name.text = "Not logged in"
+                // Session is valid but the name couldn't be fetched: don't claim logged out.
+                name.text = if (Ig.isLoggedIn()) "Logged in" else "Not logged in"
             }
         }
         view.findViewById<View>(R.id.rowBrowse).setOnClickListener {

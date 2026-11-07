@@ -1,6 +1,7 @@
 package com.ashu.ghostview
 
 import android.webkit.CookieManager
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -379,23 +380,45 @@ object Ig {
     suspend fun hdPic(user: IgUser): String =
         try { userById(user.id).pic.ifEmpty { user.pic } } catch (e: Exception) { user.pic }
 
-    suspend fun me(): IgUser? = myId()?.let { try { userById(it) } catch (e: Exception) { null } }
+    suspend fun me(): IgUser? {
+        // Web endpoint that returns the logged-in account (works with the web session).
+        try {
+            val j = first("me", listOf(
+                "${PAGE}/api/v1/accounts/current_user/?edit=false",
+                "$WWW/api/v1/accounts/current_user/?edit=false",
+            )) { it.optJSONObject("user") != null }
+            j.optJSONObject("user")?.let { return userFrom(it) }
+        } catch (e: Exception) { /* fall back below */ }
+        return myId()?.let { try { userById(it) } catch (e: Exception) { null } }
+    }
 
     suspend fun search(query: String): List<IgUser> {
         val q = enc(query)
-        val j = first("search", listOf(
-            "${PAGE}/api/v1/web/search/topsearch/?context=blended&query=$q",
-            "$WWW/api/v1/web/search/topsearch/?context=blended&query=$q",
-        )) { (it.optJSONArray("users")?.length() ?: 0) > 0 || (it.optJSONArray("list")?.length() ?: 0) > 0 }
         val out = mutableListOf<IgUser>()
-        j.optJSONArray("users")?.let { arr ->
-            for (i in 0 until arr.length()) {
-                val o = arr.getJSONObject(i)
-                out += userFrom(o.optJSONObject("user") ?: o)   // both {user:{..}} and flat user shapes
+        // Try several search endpoints; use whichever still returns results.
+        try {
+            val j = first("search", listOf(
+                "${PAGE}/api/v1/web/search/topsearch/?context=blended&query=$q",
+                "${PAGE}/web/search/topsearch/?context=blended&query=$q",
+                "${PAGE}/api/v1/fbsearch/account_serp/?query=$q&count=30",
+                "${MOB}/api/v1/users/search/?q=$q&count=30",
+                "$WWW/api/v1/web/search/topsearch/?context=blended&query=$q",
+            )) { (it.optJSONArray("users")?.length() ?: 0) > 0 || (it.optJSONArray("list")?.length() ?: 0) > 0 }
+            j.optJSONArray("users")?.let { arr ->
+                for (i in 0 until arr.length()) {
+                    val o = arr.getJSONObject(i)
+                    out += userFrom(o.optJSONObject("user") ?: o)   // both {user:{..}} and flat user shapes
+                }
             }
-        }
-        j.optJSONArray("list")?.let { arr ->
-            for (i in 0 until arr.length()) arr.getJSONObject(i).optJSONObject("user")?.let { out += userFrom(it) }
+            j.optJSONArray("list")?.let { arr ->
+                for (i in 0 until arr.length()) arr.getJSONObject(i).optJSONObject("user")?.let { out += userFrom(it) }
+            }
+        } catch (e: CancellationException) { throw e } catch (e: Exception) { /* fall through */ }
+
+        // If the search endpoints are unavailable, fall back to an exact-username lookup
+        // (works when you type the full handle), reusing the profile endpoint that works.
+        if (out.isEmpty()) {
+            try { out += userByName(query) } catch (e: Exception) {}
         }
         return out.filter { it.username.isNotEmpty() }.distinctBy { it.username }
     }
