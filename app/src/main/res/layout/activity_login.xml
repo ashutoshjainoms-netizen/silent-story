@@ -1,64 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<!-- Instagram's own login page, full screen. No BlindView buttons. -->
+<WebView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/web"
     android:layout_width="match_parent"
-    android:layout_height="match_parent"
-    android:orientation="vertical">
-
-    <TextView
-        android:id="@+id/banner"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:background="@color/ghost_accent"
-        android:padding="12dp"
-        android:text="Log in to Instagram below. If Instagram asks for approval, approve it in the Instagram app and come back. BlindView logs in by itself."
-        android:textColor="#FFFFFFFF"
-        android:textSize="14sp" />
-
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:background="@color/ghost_accent"
-        android:orientation="horizontal"
-        android:paddingStart="8dp"
-        android:paddingEnd="8dp"
-        android:paddingBottom="8dp">
-
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btnContinue"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:layout_marginEnd="6dp"
-            android:backgroundTint="#FFFFFFFF"
-            android:text="Check now"
-            android:textColor="@color/ghost_accent" />
-
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btnRestart"
-            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Start over"
-            android:textColor="#FFFFFFFF"
-            app:strokeColor="#FFFFFFFF"
-            xmlns:app="http://schemas.android.com/apk/res-auto" />
-    </LinearLayout>
-
-    <com.google.android.material.button.MaterialButton
-        android:id="@+id/btnEmailCode"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:background="@color/ghost_accent"
-        android:backgroundTint="#FF171923"
-        android:layout_marginStart="8dp"
-        android:layout_marginEnd="8dp"
-        android:layout_marginBottom="8dp"
-        android:text="✉  Get code by email instead"
-        android:textColor="#FFFFFFFF" />
-
-    <WebView
-        android:id="@+id/web"
-        android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1" />
-</LinearLayout>
+    android:layout_height="match_parent" />

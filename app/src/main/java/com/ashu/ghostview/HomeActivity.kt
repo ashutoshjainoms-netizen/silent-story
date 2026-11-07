@@ -18,6 +18,11 @@ class HomeActivity : AppCompatActivity() {
         if (savedInstanceState == null) show(R.id.nav_home)
     }
 
+    override fun onPause() {
+        super.onPause()
+        Ig.restoreSession()   // saves the latest login cookie
+    }
+
     override fun onResume() {
         super.onResume()
         if (!Ig.isLoggedIn() && !LoginActivity.open) {

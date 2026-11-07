@@ -129,6 +129,7 @@ class WebActivity : AppCompatActivity() {
         web.webViewClient = object : WebViewClient() {
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                 val uri = request.url
+                if (Ig.isLogoutUrl(uri)) return true   // logging out only from BlindView's Settings
                 val scheme = uri.scheme ?: return true
                 // Block instagram:// and intent:// links that would jump to the official app.
                 if (scheme != "http" && scheme != "https") return true
@@ -145,6 +146,7 @@ class WebActivity : AppCompatActivity() {
             override fun onPageFinished(view: WebView, url: String?) {
                 if (!docStartScript) view.evaluateJavascript(script, null)
                 CookieManager.getInstance().flush()
+                Ig.restoreSession()   // keeps the saved login fresh, or puts it back if the page dropped it
                 if (autoDownloadOnLoad) {
                     autoDownloadOnLoad = false
                     view.postDelayed({ triggerDownload() }, 1500)

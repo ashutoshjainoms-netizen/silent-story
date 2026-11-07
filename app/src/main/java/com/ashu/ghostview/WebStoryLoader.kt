@@ -66,6 +66,7 @@ class WebStoryLoader(activity: Activity, container: ViewGroup) {
         }
         web.webViewClient = object : WebViewClient() {
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
+                if (Ig.isLogoutUrl(request.url)) return true
                 val sc = request.url.scheme
                 return sc != "http" && sc != "https"
             }

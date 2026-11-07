@@ -81,7 +81,7 @@ object Ig {
         val cm = CookieManager.getInstance()
         KEEP_NAMES.forEach { n ->
             p.getString(n, null)?.let { v ->
-                cm.setCookie(WWW, "$n=$v; Domain=.instagram.com; Path=/; Max-Age=31536000; Secure")
+                cm.setCookie(WWW, "$n=$v; Domain=.instagram.com; Path=/; Max-Age=315360000; Secure")
             }
         }
         cm.flush()
@@ -100,6 +100,9 @@ object Ig {
         }
         return false
     }
+
+    /** True for Instagram's web logout links. Only Settings -> Log out may end the login. */
+    fun isLogoutUrl(u: android.net.Uri?): Boolean = u?.path?.contains("/accounts/logout") == true
 
     /** Forget the saved session (it expired) so it can't interfere with a fresh login. */
     fun forgetSaved() { prefs()?.edit()?.clear()?.apply() }
