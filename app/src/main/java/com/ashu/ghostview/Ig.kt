@@ -40,6 +40,10 @@ object Ig {
 
     /** Story items that came with the tray, keyed by user id (saves a request). */
     private val trayItems = ConcurrentHashMap<String, List<StoryItem>>()
+    /** Incomplete item lists from the tray: used only if every other way fails. */
+    private val trayPartial = ConcurrentHashMap<String, List<StoryItem>>()
+    /** Tray reel id per user (normally the same as the user id). */
+    private val reelIds = ConcurrentHashMap<String, String>()
 
     /** Short log of which server answered each request (shown by the connection test). */
     private val log = ArrayDeque<String>()
@@ -166,8 +170,21 @@ object Ig {
     private fun enc(s: String) = URLEncoder.encode(s, "UTF-8")
 
     // ---------------- parsing ----------------
+    /** Reads a numeric id without scientific notation or decimals (e.g. 1.2E10 -> 12000000000). */
+    private fun idOf(j: JSONObject?, vararg keys: String): String {
+        if (j == null) return ""
+        for (k in keys) {
+            val v = j.opt(k) ?: continue
+            val raw = v.toString().trim().substringBefore("_")
+            if (raw.isEmpty() || raw == "null") continue
+            if (raw.all { it.isDigit() }) return raw
+            try { return java.math.BigDecimal(raw).toBigInteger().toString() } catch (e: Exception) {}
+        }
+        return ""
+    }
+
     private fun userFrom(j: JSONObject) = IgUser(
-        id = j.optString("pk_id").ifEmpty { j.optString("pk") }.ifEmpty { j.optString("id") },
+        id = idOf(j, "pk_id", "pk", "id"),
         username = j.optString("username"),
         fullName = j.optString("full_name"),
         pic = j.optJSONObject("hd_profile_pic_url_info")?.optString("url").orEmpty()
@@ -181,9 +198,24 @@ object Ig {
             .maxByOrNull { it.optInt("width") * it.optInt("height") }
     }
 
+    private fun bestRes(arr: JSONArray?): String? {
+        if (arr == null || arr.length() == 0) return null
+        return (0 until arr.length()).map { arr.getJSONObject(it) }
+            .maxByOrNull { it.optInt("config_width") * it.optInt("config_height") }?.optString("src")
+    }
+
     private fun itemFrom(j: JSONObject): StoryItem? {
-        val pk = j.optString("pk").ifEmpty { j.optString("id").substringBefore("_") }
-        val taken = j.optLong("taken_at")
+        val pk = idOf(j, "pk", "id")
+        val taken = if (j.has("taken_at")) j.optLong("taken_at") else j.optLong("taken_at_timestamp")
+        // GraphQL shape (website internal API)
+        if (j.has("display_resources") || j.has("video_resources") || j.has("display_url")) {
+            if (j.optBoolean("is_video")) {
+                val v = bestRes(j.optJSONArray("video_resources"))
+                if (!v.isNullOrEmpty()) return StoryItem(pk, v, true, taken)
+            }
+            val img = bestRes(j.optJSONArray("display_resources")) ?: j.optString("display_url")
+            return if (img.isNullOrEmpty()) null else StoryItem(pk, img, false, taken)
+        }
         val video = best(j.optJSONArray("video_versions"))
         if (video != null && video.optString("url").isNotEmpty()) return StoryItem(pk, video.optString("url"), true, taken)
         val img = best(j.optJSONObject("image_versions2")?.optJSONArray("candidates")) ?: return null
@@ -209,6 +241,9 @@ object Ig {
             if (arr.length() > 0) return arr.getJSONObject(0)
         }
         j.optJSONObject("reel")?.let { return it }
+        j.optJSONObject("data")?.let { d ->
+            if (d !== j) reelIn(d, userId)?.let { return it }
+        }
         return null
     }
 
@@ -222,7 +257,7 @@ object Ig {
             "$WWW/api/v1/feed/reels_tray/"
         )) { (it.optJSONArray("tray")?.length() ?: 0) > 0 }
         val arr = j.optJSONArray("tray") ?: return emptyList()
-        trayItems.clear()
+        trayItems.clear(); trayPartial.clear(); reelIds.clear()
         return (0 until arr.length()).mapNotNull { i ->
             val t = arr.getJSONObject(i)
             val u = t.optJSONObject("user") ?: return@mapNotNull null
@@ -233,6 +268,8 @@ object Ig {
             val items = itemsOf(t.optJSONArray("items"))
             val total = t.optInt("media_count", 0)
             if (items.isNotEmpty() && (total == 0 || items.size >= total)) trayItems[user.id] = items
+            else if (items.isNotEmpty()) trayPartial[user.id] = items
+            idOf(t, "id").takeIf { it.isNotEmpty() && it != user.id }?.let { reelIds[user.id] = it }
             TrayEntry(user, t.optLong("expiring_at"), t.optLong("latest_reel_media"))
         }
     }
@@ -240,15 +277,27 @@ object Ig {
     /** All current stories of one user. */
     suspend fun stories(userId: String): List<StoryItem> {
         trayItems[userId]?.let { if (it.isNotEmpty()) return it }
-        val id = enc(userId)
-        val j = first("stories", listOf(
-            "${PAGE}/api/v1/feed/reels_media/?reel_ids=$id",
-            "$MOB/api/v1/feed/reels_media/?reel_ids=$id",
-            "$MOB/api/v1/feed/user/$id/story/",
-            "$MOB/api/v1/feed/user/$id/reel_media/",
-            "$WWW/api/v1/feed/reels_media/?reel_ids=$id"
-        )) { (reelIn(it, userId)?.optJSONArray("items")?.length() ?: 0) > 0 }
-        return itemsOf(reelIn(j, userId)?.optJSONArray("items"))
+        val ids = listOfNotNull(userId, reelIds[userId]).filter { it.isNotEmpty() }.distinct()
+        val urls = mutableListOf<String>()
+        for (raw in ids) {
+            val id = enc(raw)
+            val gqlVars = enc("{\"reel_ids\":[\"$raw\"],\"tag_names\":[],\"location_ids\":[],\"highlight_reel_ids\":[],\"precomposed_overlay\":false}")
+            urls += "${PAGE}/api/v1/feed/reels_media/?reel_ids=$id"
+            urls += "${PAGE}/graphql/query/?query_hash=303a4ae99711322310f25250d988f3b7&variables=$gqlVars"
+            urls += "${PAGE}/graphql/query/?query_hash=de8017ee0a7c9c45ec4260733d81ea31&variables=$gqlVars"
+            urls += "$MOB/api/v1/feed/reels_media/?reel_ids=$id"
+            urls += "$MOB/api/v1/feed/user/$id/story/"
+            urls += "${PAGE}/api/v1/feed/user/$id/story/"
+        }
+        val key = ids.first()
+        val j = try {
+            first("stories (id $key)", urls) { r -> ids.any { (reelIn(r, it)?.optJSONArray("items")?.length() ?: 0) > 0 } }
+        } catch (e: Exception) {
+            trayPartial[userId]?.let { if (it.isNotEmpty()) return it }
+            throw e
+        }
+        val items = ids.firstNotNullOfOrNull { id -> itemsOf(reelIn(j, id)?.optJSONArray("items")).ifEmpty { null } }
+        return items ?: trayPartial[userId] ?: emptyList()
     }
 
     suspend fun userByName(username: String): IgUser {
