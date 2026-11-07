@@ -20,7 +20,9 @@ class HomeActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        if (!Ig.isLoggedIn()) startActivity(Intent(this, LoginActivity::class.java))
+        if (!Ig.isLoggedIn() && !LoginActivity.open) {
+            startActivity(Intent(this, LoginActivity::class.java))
+        }
     }
 
     private fun show(id: Int) {

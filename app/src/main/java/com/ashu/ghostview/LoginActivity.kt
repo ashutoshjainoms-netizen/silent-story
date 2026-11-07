@@ -21,6 +21,10 @@ import androidx.appcompat.app.AppCompatActivity
  *    approval every few seconds, so tapping "Approve" on the other phone is enough.
  */
 class LoginActivity : AppCompatActivity() {
+    companion object {
+        /** True while the login screen exists, so Home never opens a second, fresh one. */
+        @Volatile var open = false
+    }
     private lateinit var web: WebView
     private lateinit var banner: TextView
     private val handler = Handler(Looper.getMainLooper())
@@ -35,7 +39,7 @@ class LoginActivity : AppCompatActivity() {
             val url = web.url.orEmpty()
             if (isWaitingPage(url)) {
                 if (waitingSince == 0L) waitingSince = System.currentTimeMillis()
-                banner.text = "Waiting for you to approve on your other phone… BlindView will log in by itself as soon as you approve."
+                banner.text = "Approve the login in the Instagram app (on this phone or another one), then come back here. BlindView logs in by itself, no need to log in again."
                 // Every 6 s ask Instagram (in the background) whether the approval went through.
                 if (System.currentTimeMillis() - lastProbe > 6000) { lastProbe = System.currentTimeMillis(); probe() }
             } else if (waitingSince > 0L && url.contains("/accounts/login")) {
@@ -62,6 +66,7 @@ class LoginActivity : AppCompatActivity() {
         done = true
         Ig.saveSession()
         PageFetch.reset()
+        open = false
         finish()
     }
 
@@ -69,7 +74,8 @@ class LoginActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_login)
-        Ig.forgetSaved()   // an old expired session must not mix into this login
+        open = true
+        if (savedInstanceState == null) Ig.forgetSaved()   // an old expired session must not mix into this login
         web = findViewById(R.id.web)
         web.asPlainBrowser()
         banner = findViewById(R.id.banner)
@@ -102,7 +108,9 @@ class LoginActivity : AppCompatActivity() {
                 if (Ig.hasSessionCookie()) finishLogin()
             }
         }
-        web.loadUrl("https://www.instagram.com/accounts/login/")
+        val restored = savedInstanceState?.getBundle("web")?.let { web.restoreState(it) != null } == true
+        if (restored) waitingSince = savedInstanceState?.getLong("waiting") ?: 0L
+        else web.loadUrl("https://www.instagram.com/accounts/login/")
 
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
@@ -111,6 +119,26 @@ class LoginActivity : AppCompatActivity() {
         })
     }
 
-    override fun onResume() { super.onResume(); handler.post(check) }
+    override fun onResume() {
+        super.onResume()
+        // Coming back after approving in the Instagram app: reload the waiting page so
+        // Instagram notices the approval right away instead of asking again.
+        CookieManager.getInstance().flush()
+        if (Ig.hasSessionCookie()) { finishLogin(); return }
+        if (waitingSince > 0L && isWaitingPage(web.url.orEmpty())) web.reload()
+        handler.post(check)
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putBundle("web", Bundle().also { web.saveState(it) })
+        outState.putLong("waiting", waitingSince)
+    }
+
+    override fun onDestroy() {
+        open = false
+        handler.removeCallbacks(check)
+        super.onDestroy()
+    }
     override fun onPause() { super.onPause(); handler.removeCallbacks(check) }
 }
