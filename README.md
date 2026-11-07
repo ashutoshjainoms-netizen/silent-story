@@ -1,32 +1,21 @@
-# BlindView Android starter
+# BlindView 1.0: private Instagram story viewer (personal use)
 
-This is an Android Studio / GitHub Actions source scaffold for Samsung Galaxy S23 Ultra.
+## Screens
+- **Home**: a "Hurry Up!" card with stories about to expire (live countdown), then a grid of everyone you follow who has a story. A colored ring means you haven't watched it in BlindView yet. "New" means it was posted in the last hour. Pull down to refresh.
+- **Story viewer**: tap right for next, tap left for previous, hold to pause. It moves on to the next person automatically. Buttons: **Save**, **Share** (repost to Instagram, WhatsApp and so on) and **Favorite**. It never tells Instagram you watched.
+- **Search**: find any account. Its page shows the HD profile photo (downloadable), "View stories anonymously" and a favorite button.
+- **Favorites**: people you starred.
+- **Settings**: your account (log out or switch), and **Browse Instagram**, the website mode for downloading posts, reels and highlights with the purple button.
+- **Share to BlindView**: from the Instagram app, share any post or reel link to BlindView to download it.
 
-## Included in this starter
-- Blindstory-inspired home, search, favorites, settings and navigation UI
-- Story/profile demo cards
-- Local photo/video selection using Android's system document picker
-- Light/dark appearance toggle
-- No password collection or private-story bypass
+Downloads go to **Pictures/BlindView**.
 
-## Build a test APK without installing Android Studio locally
-1. Create a GitHub repository and upload the contents of this folder.
-2. Open the repository's Actions tab.
-3. Run **Build BlindView APK** (or push to the main branch).
-4. Download the `BlindView-debug-apk` artifact from the completed workflow.
+## Build the APK with GitHub Actions
+1. Create a **private** repository on github.com.
+2. Upload the contents of this folder, including the hidden `.github` folder.
+3. Open the **Actions** tab and wait for "Build APK" to finish (about 5 minutes).
+4. Download **BlindView-apk**, unzip it and install `app-debug.apk`. 
 
-The generated APK is a debug/test build, not a signed Play Store release.
-
-## Important capability boundary
-This starter does **not** fetch Instagram personal-account stories. Meta's supported APIs do not provide a general-purpose endpoint for anonymously viewing/downloading arbitrary personal or private stories. Live integration requires an eligible Meta app, approved permissions, OAuth configuration, and compliance review. The visible remote profiles are demo placeholders, not live results.
-
-## Build details
-Package: `com.arnav.blindview`
-Min SDK: 26
-Target SDK: 35
-Compile SDK: 35
-Gradle: 8.9
-Java: 17
-
-## Current status
-Source scaffold only. The APK has not yet been compiled or device-tested in this environment. The included GitHub Actions workflow provides a cloud build path.
+## Notes
+- Using a second Instagram account is safer, since unofficial tools can get accounts flagged.
+- If something stops working after an Instagram update, the API code is in `Ig.kt` and the website-mode code is in `assets/inject.js`.
