@@ -53,6 +53,7 @@ class WebActivity : AppCompatActivity() {
 
         prefs = getSharedPreferences("ghost", MODE_PRIVATE)
         web = findViewById(R.id.web)
+        web.asPlainBrowser()
         hiddenCount = findViewById(R.id.hiddenCount)
         script = assets.open("inject.js").bufferedReader().use { it.readText() }
 

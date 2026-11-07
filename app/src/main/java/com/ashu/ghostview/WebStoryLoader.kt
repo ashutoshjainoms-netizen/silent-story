@@ -53,6 +53,7 @@ class WebStoryLoader(activity: Activity, container: ViewGroup) {
     init {
         @SuppressLint("SetJavaScriptEnabled")
         val s = web.settings
+        web.asPlainBrowser()
         s.javaScriptEnabled = true
         s.domStorageEnabled = true
         s.mediaPlaybackRequiresUserGesture = true   // nothing plays, no sound

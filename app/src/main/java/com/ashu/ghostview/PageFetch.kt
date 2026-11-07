@@ -36,6 +36,7 @@ object PageFetch {
     fun init(ctx: Context) {
         if (web != null) return
         val w = WebView(ctx.applicationContext)
+        w.asPlainBrowser()
         w.settings.javaScriptEnabled = true
         w.settings.domStorageEnabled = true
         w.settings.userAgentString = Ig.UA

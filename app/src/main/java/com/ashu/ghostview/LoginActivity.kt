@@ -71,6 +71,7 @@ class LoginActivity : AppCompatActivity() {
         setContentView(R.layout.activity_login)
         Ig.forgetSaved()   // an old expired session must not mix into this login
         web = findViewById(R.id.web)
+        web.asPlainBrowser()
         banner = findViewById(R.id.banner)
         findViewById<View>(R.id.btnContinue).setOnClickListener {
             CookieManager.getInstance().flush()
